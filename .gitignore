@@ -14,9 +14,6 @@
 # Build directory
 build/
 
-# Old binary in root (if exists)
-family-tree
-
 # Dependency directories
 vendor/
 
