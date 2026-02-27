@@ -16,65 +16,128 @@ type State struct {
 	From    *models.Person
 }
 
+// performStep performs one step of traversal for a single person
+// Returns all possible next persons based on the step type
+func performStep(current *models.Person, from *models.Person, step rune) []*models.Person {
+	var result []*models.Person
+
+	add := func(p *models.Person) {
+		if p != nil && p != from {
+			result = append(result, p)
+		}
+	}
+
+	switch step {
+	case 'P': // Parents
+		p1, p2 := current.GetParents()
+		add(p1)
+		add(p2)
+
+	case 'C': // Children
+		for _, child := range current.GetChildren() {
+			add(child)
+		}
+
+	case 'S': // Spouse
+		add(current.GetSpouse())
+
+	case 'W': // Wife (female spouse)
+		sp := current.GetSpouse()
+		if sp != nil && sp.Gender == models.Female {
+			add(sp)
+		}
+
+	case 'H': // Husband (male spouse)
+		sp := current.GetSpouse()
+		if sp != nil && sp.Gender == models.Male {
+			add(sp)
+		}
+	}
+
+	return result
+}
+
 // TraversePath traverses the family tree following the given path
+// Uses goroutines to process states concurrently at each step
 func TraversePath(start *models.Person, path string) []*models.Person {
 	states := []State{{Current: start, From: nil}}
 
 	for _, step := range path {
-		var nextStates []State
+		// Process states concurrently using worker pool pattern
+		stateChan := make(chan State, len(states))
+		resultChan := make(chan []State, len(states))
 
+		// Send all states to channel
 		for _, state := range states {
-			cur := state.Current
-			from := state.From
+			stateChan <- state
+		}
+		close(stateChan)
 
-			add := func(p *models.Person) {
-				if p != nil && p != from {
-					nextStates = append(nextStates, State{Current: p, From: cur})
-				}
-			}
+		// Launch workers to process states
+		var wg sync.WaitGroup
+		numWorkers := max(1, min(len(states), 10))
 
-			switch step {
-			case 'P': // Parents
-				p1, p2 := cur.GetParents()
-				add(p1)
-				add(p2)
+		for i := 0; i < numWorkers; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				var localStates []State
 
-			case 'C': // Children
-				for _, child := range cur.GetChildren() {
-					add(child)
-				}
+				for state := range stateChan {
+					// Perform one step for this person
+					nextPersons := performStep(state.Current, state.From, step)
 
-			case 'S': // Spouse
-				add(cur.GetSpouse())
-
-			case 'W': // Wife (female spouse)
-				sp := cur.GetSpouse()
-				if sp != nil && sp.Gender == models.Female {
-					add(sp)
+					// Convert to states
+					for _, person := range nextPersons {
+						localStates = append(localStates, State{
+							Current: person,
+							From:    state.Current,
+						})
+					}
 				}
 
-			case 'H': // Husband (male spouse)
-				sp := cur.GetSpouse()
-				if sp != nil && sp.Gender == models.Male {
-					add(sp)
+				if len(localStates) > 0 {
+					resultChan <- localStates
 				}
-			}
+			}()
+		}
+
+		// Wait and collect results
+		go func() {
+			wg.Wait()
+			close(resultChan)
+		}()
+
+		var nextStates []State
+		for localStates := range resultChan {
+			nextStates = append(nextStates, localStates...)
 		}
 
 		states = nextStates
 	}
 
-	// Deduplicate results
+	// Deduplicate results concurrently
 	seen := make(map[*models.Person]bool)
 	var result []*models.Person
+	var mutex sync.Mutex
 
+	var wg sync.WaitGroup
 	for _, state := range states {
-		person := state.Current
-		if person != start && !seen[person] {
-			seen[person] = true
-			result = append(result, person)
-		}
+		wg.Add(1)
+		go func(s State) {
+			defer wg.Done()
+			person := s.Current
+
+			mutex.Lock()
+			defer mutex.Unlock()
+
+			if person != start && !seen[person] {
+				seen[person] = true
+				result = append(result, person)
+			}
+		}(state)
 	}
+	wg.Wait()
 
 	return result
 }

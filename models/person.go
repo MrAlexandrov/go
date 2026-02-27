@@ -40,12 +40,12 @@ func (p *Person) GetParents() (*Person, *Person) {
 	return p.parentCouple.First, p.parentCouple.Second
 }
 
-// GetChildren returns all children of this person
+// GetChildren returns all children of this person (thread-safe)
 func (p *Person) GetChildren() []*Person {
 	if p.couple == nil {
 		return nil
 	}
-	return p.couple.Children
+	return p.couple.GetChildren()
 }
 
 // SetCouple sets the couple this person belongs to

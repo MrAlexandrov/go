@@ -18,7 +18,7 @@ type Relation struct {
 }
 
 // ParsePeopleFile parses the people file and creates all persons
-// Uses goroutines to parse each person concurrently
+// Uses pipeline pattern: read → filter → parse → add to tree
 func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -26,41 +26,54 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 	}
 	defer file.Close()
 
-	var lines []string
-	scanner := bufio.NewScanner(file)
-
-	// Read all lines first
-	for scanner.Scan() {
-		line := strings.TrimRight(scanner.Text(), " \r\n")
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.Contains(line, "(М)") || strings.Contains(line, "(Ж)") {
-			lines = append(lines, line)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading file: %w", err)
-	}
-
-	// Parse all persons concurrently
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(lines))
-
-	for _, line := range lines {
-		wg.Add(1)
-		lineCopy := line
-		go func(l string) {
-			defer wg.Done()
-			if err := parsePerson(l, tree); err != nil {
-				errChan <- err
+	// Stage 1: Read lines from file
+	lineChan := make(chan string, 100)
+	go func() {
+		defer close(lineChan)
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := strings.TrimRight(scanner.Text(), " \r\n")
+			if line != "" && !strings.HasPrefix(line, "#") {
+				lineChan <- line
 			}
-		}(lineCopy)
+		}
+	}()
+
+	// Stage 2: Filter valid person lines
+	validLineChan := make(chan string, 100)
+	go func() {
+		defer close(validLineChan)
+		for line := range lineChan {
+			if strings.Contains(line, "(М)") || strings.Contains(line, "(Ж)") {
+				validLineChan <- line
+			}
+		}
+	}()
+
+	// Stage 3: Parse persons concurrently (fan-out)
+	var wg sync.WaitGroup
+	errChan := make(chan error, 10)
+
+	// Launch multiple workers
+	numWorkers := 5
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for line := range validLineChan {
+				if err := parsePerson(line, tree); err != nil {
+					errChan <- err
+					return
+				}
+			}
+		}()
 	}
 
-	wg.Wait()
-	close(errChan)
+	// Wait for all workers and close error channel
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
 
 	// Check for errors
 	for err := range errChan {
@@ -97,7 +110,6 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 			children = append(children, line)
 		}
 	}
-
 	if err := scanner.Err(); err != nil {
 		return fmt.Errorf("error reading file: %w", err)
 	}
@@ -105,7 +117,6 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	// Parse marriages first (must be done before children)
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(marriages))
-
 	for _, line := range marriages {
 		wg.Add(1)
 		lineCopy := line
@@ -116,20 +127,15 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 			}
 		}(lineCopy)
 	}
-
 	wg.Wait()
 	close(errChan)
-
-	// Check for errors
 	for err := range errChan {
 		if err != nil {
 			return err
 		}
 	}
 
-	// Now parse children relationships (can be done fully in parallel)
 	errChan = make(chan error, len(children))
-
 	for _, line := range children {
 		wg.Add(1)
 		lineCopy := line
@@ -140,11 +146,8 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 			}
 		}(lineCopy)
 	}
-
 	wg.Wait()
 	close(errChan)
-
-	// Check for errors
 	for err := range errChan {
 		if err != nil {
 			return err
