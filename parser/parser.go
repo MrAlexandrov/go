@@ -12,15 +12,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// Relation represents a family relationship definition
 type Relation struct {
 	Path       string
 	MaleTerm   string
 	FemaleTerm string
 }
 
-// ParsePeopleFile parses the people file and creates all persons
-// Uses pipeline pattern: read → filter → parse → add to tree
 func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -28,7 +25,6 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 	}
 	defer file.Close()
 
-	// Stage 1: Read lines from file
 	lineChan := make(chan string, 100)
 	go func() {
 		defer close(lineChan)
@@ -41,7 +37,6 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 		}
 	}()
 
-	// Stage 2: Filter valid person lines
 	validLineChan := make(chan string, 100)
 	go func() {
 		defer close(validLineChan)
@@ -52,11 +47,9 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 		}
 	}()
 
-	// Stage 3: Parse persons concurrently (fan-out)
 	var wg sync.WaitGroup
 	errChan := make(chan error, 10)
 
-	// Launch multiple workers
 	numWorkers := 5
 	for range numWorkers {
 		wg.Go(func() {
@@ -69,13 +62,11 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 		})
 	}
 
-	// Wait for all workers and close error channel
 	go func() {
 		wg.Wait()
 		close(errChan)
 	}()
 
-	// Check for errors
 	for err := range errChan {
 		if err != nil {
 			return err
@@ -85,8 +76,6 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 	return nil
 }
 
-// ParseConnectionsFile parses marriages and parent-child relationships
-// Marriages and children can be processed fully in parallel since all persons exist
 func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -97,7 +86,6 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	var marriages, children []string
 	scanner := bufio.NewScanner(file)
 
-	// Read all lines first
 	for scanner.Scan() {
 		line := strings.TrimRight(scanner.Text(), " \r\n")
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -114,7 +102,6 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 		return fmt.Errorf("error reading file: %w", err)
 	}
 
-	// Parse marriages first (must be done before children)
 	g := new(errgroup.Group)
 	for _, line := range marriages {
 		g.Go(func() error {
@@ -138,7 +125,6 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	return nil
 }
 
-// ParsePerson parses a person line and adds them to the tree
 func ParsePerson(line string, tree *models.FamilyTree) error {
 	parenIdx := strings.LastIndex(line, " (")
 	if parenIdx == -1 {
@@ -157,7 +143,6 @@ func ParsePerson(line string, tree *models.FamilyTree) error {
 	return nil
 }
 
-// ParseMarriage parses a marriage relationship
 func ParseMarriage(line string, tree *models.FamilyTree) error {
 	before, after, ok := strings.Cut(line, "<->")
 	if !ok {
@@ -177,7 +162,6 @@ func ParseMarriage(line string, tree *models.FamilyTree) error {
 	return nil
 }
 
-// ParseChild parses a parent-child relationship
 func ParseChild(line string, tree *models.FamilyTree) error {
 	before, after, ok := strings.Cut(line, "->")
 	if !ok {
@@ -203,8 +187,6 @@ func ParseChild(line string, tree *models.FamilyTree) error {
 	return nil
 }
 
-// ParseRelationsFile parses the relations definition file
-// Uses goroutines to parse lines concurrently
 func ParseRelationsFile(filename string) ([]Relation, error) {
 	file, err := os.Open(filename)
 	if err != nil {
@@ -226,7 +208,6 @@ func ParseRelationsFile(filename string) ([]Relation, error) {
 		return nil, fmt.Errorf("error reading file: %w", err)
 	}
 
-	// Parse relations concurrently
 	relations := make([]Relation, len(lines))
 	var wg sync.WaitGroup
 	var mutex sync.Mutex
@@ -254,14 +235,12 @@ func ParseRelationsFile(filename string) ([]Relation, error) {
 		close(errChan)
 	}()
 
-	// Check for errors
 	for err := range errChan {
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	// Filter out empty relations
 	var result []Relation
 	for _, rel := range relations {
 		if rel.Path != "" {
@@ -272,7 +251,6 @@ func ParseRelationsFile(filename string) ([]Relation, error) {
 	return result, nil
 }
 
-// ParseRelation parses a single relation line
 func ParseRelation(line string) (Relation, error) {
 	spaceIdx := strings.Index(line, " ")
 	if spaceIdx == -1 {

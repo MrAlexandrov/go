@@ -5,7 +5,6 @@ import (
 	"sync"
 )
 
-// FamilyTree represents the entire family tree structure
 type FamilyTree struct {
 	persons []*Person
 	couples []*Couple
@@ -13,7 +12,6 @@ type FamilyTree struct {
 	mutex   sync.RWMutex
 }
 
-// NewFamilyTree creates a new FamilyTree instance
 func NewFamilyTree() *FamilyTree {
 	return &FamilyTree{
 		persons: make([]*Person, 0),
@@ -22,7 +20,6 @@ func NewFamilyTree() *FamilyTree {
 	}
 }
 
-// AddPerson adds a new person to the family tree
 func (familyTree *FamilyTree) AddPerson(name string, gender Gender) *Person {
 	familyTree.mutex.Lock()
 	defer familyTree.mutex.Unlock()
@@ -33,7 +30,6 @@ func (familyTree *FamilyTree) AddPerson(name string, gender Gender) *Person {
 	return person
 }
 
-// AddCouple creates a couple relationship between two people
 func (familyTree *FamilyTree) AddCouple(p1, p2 *Person) *Couple {
 	familyTree.mutex.Lock()
 	defer familyTree.mutex.Unlock()
@@ -45,7 +41,6 @@ func (familyTree *FamilyTree) AddCouple(p1, p2 *Person) *Couple {
 	return couple
 }
 
-// FindPerson finds a person by name
 func (familyTree *FamilyTree) FindPerson(name string) *Person {
 	familyTree.mutex.RLock()
 	defer familyTree.mutex.RUnlock()
@@ -53,12 +48,10 @@ func (familyTree *FamilyTree) FindPerson(name string) *Person {
 	return familyTree.byName[name]
 }
 
-// GetAllPersons returns all persons in the tree
 func (familyTree *FamilyTree) GetAllPersons() map[string]*Person {
 	familyTree.mutex.RLock()
 	defer familyTree.mutex.RUnlock()
 
-	// Return a copy to avoid race conditions
 	result := make(map[string]*Person, len(familyTree.byName))
 	maps.Copy(result, familyTree.byName)
 	return result
