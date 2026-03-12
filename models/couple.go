@@ -4,8 +4,8 @@ import "sync"
 
 // Couple represents a married pair and their children
 type Couple struct {
-	First    *Person
-	Second   *Person
+	First    *Person // Male
+	Second   *Person // Female
 	Children []*Person
 	mutex    sync.RWMutex // Protects Children slice for concurrent access
 }

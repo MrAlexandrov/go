@@ -1,6 +1,9 @@
 package models
 
-import "sync"
+import (
+	"maps"
+	"sync"
+)
 
 // FamilyTree represents the entire family tree structure
 type FamilyTree struct {
@@ -57,9 +60,7 @@ func (familyTree *FamilyTree) GetAllPersons() map[string]*Person {
 
 	// Return a copy to avoid race conditions
 	result := make(map[string]*Person, len(familyTree.byName))
-	for k, v := range familyTree.byName {
-		result[k] = v
-	}
+	maps.Copy(result, familyTree.byName)
 	return result
 }
 

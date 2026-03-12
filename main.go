@@ -77,10 +77,8 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 		var wg sync.WaitGroup
 		numWorkers := max(1, min(len(states), 10))
 
-		for i := 0; i < numWorkers; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range numWorkers {
+			wg.Go(func() {
 				var localStates []State
 
 				for state := range stateChan {
@@ -99,7 +97,7 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 				if len(localStates) > 0 {
 					resultChan <- localStates
 				}
-			}()
+			})
 		}
 
 		// Wait and collect results

@@ -8,6 +8,8 @@ import (
 	"sync"
 
 	"family-tree/models"
+
+	"golang.org/x/sync/errgroup"
 )
 
 // Relation represents a family relationship definition
@@ -56,17 +58,15 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 
 	// Launch multiple workers
 	numWorkers := 5
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range numWorkers {
+		wg.Go(func() {
 			for line := range validLineChan {
 				if err := parsePerson(line, tree); err != nil {
 					errChan <- err
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	// Wait for all workers and close error channel
@@ -115,43 +115,24 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	}
 
 	// Parse marriages first (must be done before children)
-	var wg sync.WaitGroup
-	errChan := make(chan error, len(marriages))
+	g := new(errgroup.Group)
 	for _, line := range marriages {
-		wg.Add(1)
-		lineCopy := line
-		go func(l string) {
-			defer wg.Done()
-			if err := parseMarriage(l, tree); err != nil {
-				errChan <- err
-			}
-		}(lineCopy)
+		g.Go(func() error {
+			return parseMarriage(line, tree)
+		})
 	}
-	wg.Wait()
-	close(errChan)
-	for err := range errChan {
-		if err != nil {
-			return err
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
-	errChan = make(chan error, len(children))
+	g = new(errgroup.Group)
 	for _, line := range children {
-		wg.Add(1)
-		lineCopy := line
-		go func(l string) {
-			defer wg.Done()
-			if err := parseChild(l, tree); err != nil {
-				errChan <- err
-			}
-		}(lineCopy)
+		g.Go(func() error {
+			return parseChild(line, tree)
+		})
 	}
-	wg.Wait()
-	close(errChan)
-	for err := range errChan {
-		if err != nil {
-			return err
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	return nil
@@ -268,8 +249,10 @@ func ParseRelationsFile(filename string) ([]Relation, error) {
 		}(i, line)
 	}
 
-	wg.Wait()
-	close(errChan)
+	go func() {
+		wg.Wait()
+		close(errChan)
+	}()
 
 	// Check for errors
 	for err := range errChan {
