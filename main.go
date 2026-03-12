@@ -16,9 +16,9 @@ type State struct {
 	From    *models.Person
 }
 
-// performStep performs one step of traversal for a single person
+// PerformStep performs one step of traversal for a single person
 // Returns all possible next persons based on the step type
-func performStep(current *models.Person, from *models.Person, step rune) []*models.Person {
+func PerformStep(current *models.Person, from *models.Person, step rune) []*models.Person {
 	var result []*models.Person
 
 	add := func(p *models.Person) {
@@ -83,7 +83,7 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 
 				for state := range stateChan {
 					// Perform one step for this person
-					nextPersons := performStep(state.Current, state.From, step)
+					nextPersons := PerformStep(state.Current, state.From, step)
 
 					// Convert to states
 					for _, person := range nextPersons {
