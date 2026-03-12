@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync"
 
 	"family-tree/models"
 
@@ -25,6 +24,8 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 	}
 	defer file.Close()
 
+	// Pipeline pattern
+	var scanErr error
 	lineChan := make(chan string, 100)
 	go func() {
 		defer close(lineChan)
@@ -35,6 +36,7 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 				lineChan <- line
 			}
 		}
+		scanErr = scanner.Err()
 	}()
 
 	validLineChan := make(chan string, 100)
@@ -47,33 +49,25 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 		}
 	}()
 
-	var wg sync.WaitGroup
-	errChan := make(chan error, 10)
-
+	// Worker pool pattern
 	numWorkers := 5
+	g := new(errgroup.Group)
 	for range numWorkers {
-		wg.Go(func() {
+		g.Go(func() error {
 			for line := range validLineChan {
 				if err := ParsePerson(line, tree); err != nil {
-					errChan <- err
-					return
+					return err
 				}
 			}
+			return nil
 		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(errChan)
-	}()
-
-	for err := range errChan {
-		if err != nil {
-			return err
-		}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
-	return nil
+	return scanErr
 }
 
 func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
@@ -209,36 +203,22 @@ func ParseRelationsFile(filename string) ([]Relation, error) {
 	}
 
 	relations := make([]Relation, len(lines))
-	var wg sync.WaitGroup
-	var mutex sync.Mutex
-	errChan := make(chan error, len(lines))
 
+	g := new(errgroup.Group)
 	for i, line := range lines {
-		wg.Add(1)
-		go func(idx int, l string) {
-			defer wg.Done()
-
-			rel, err := ParseRelation(l)
+		g.Go(func() error {
+			rel, err := ParseRelation(line)
 			if err != nil {
-				errChan <- err
-				return
+				return err
 			}
 
-			mutex.Lock()
-			relations[idx] = rel
-			mutex.Unlock()
-		}(i, line)
+			relations[i] = rel
+			return nil
+		})
 	}
 
-	go func() {
-		wg.Wait()
-		close(errChan)
-	}()
-
-	for err := range errChan {
-		if err != nil {
-			return nil, err
-		}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
 	var result []Relation

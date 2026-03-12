@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"golang.org/x/sync/errgroup"
 )
 
 type State struct {
@@ -66,11 +68,11 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 		}
 		close(stateChan)
 
-		var wg sync.WaitGroup
 		numWorkers := max(1, min(len(states), 10))
 
+		g := new(errgroup.Group)
 		for range numWorkers {
-			wg.Go(func() {
+			g.Go(func() error {
 				var localStates []State
 
 				for state := range stateChan {
@@ -87,11 +89,12 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 				if len(localStates) > 0 {
 					resultChan <- localStates
 				}
+				return nil
 			})
 		}
 
 		go func() {
-			wg.Wait()
+			g.Wait()
 			close(resultChan)
 		}()
 
@@ -107,12 +110,10 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 	var result []*models.Person
 	var mutex sync.Mutex
 
-	var wg sync.WaitGroup
+	g := new(errgroup.Group)
 	for _, state := range states {
-		wg.Add(1)
-		go func(s State) {
-			defer wg.Done()
-			person := s.Current
+		g.Go(func() error {
+			person := state.Current
 
 			mutex.Lock()
 			defer mutex.Unlock()
@@ -121,9 +122,11 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 				seen[person] = true
 				result = append(result, person)
 			}
-		}(state)
+			return nil
+		})
 	}
-	wg.Wait()
+
+	g.Wait()
 
 	return result
 }
@@ -135,22 +138,20 @@ type RelationResult struct {
 
 func ProcessRelationsConcurrently(person *models.Person, relations []parser.Relation) []RelationResult {
 	results := make([]RelationResult, len(relations))
-	var wg sync.WaitGroup
 
+	g := new(errgroup.Group)
 	for i, rel := range relations {
-		wg.Add(1)
-		go func(idx int, relation parser.Relation) {
-			defer wg.Done()
-
-			found := TraversePath(person, relation.Path)
-			results[idx] = RelationResult{
-				Relation: relation,
+		g.Go(func() error {
+			found := TraversePath(person, rel.Path)
+			results[i] = RelationResult{
+				Relation: rel,
 				Found:    found,
 			}
-		}(i, rel)
+			return nil
+		})
 	}
+	g.Wait()
 
-	wg.Wait()
 	return results
 }
 
@@ -194,32 +195,30 @@ func main() {
 	results := ProcessRelationsConcurrently(person, relations)
 
 	outputChan := make(chan string, tree.GetPeopleNumber())
-	var wg sync.WaitGroup
 
+	var g errgroup.Group
 	for _, result := range results {
-		wg.Add(1)
-		go func(res RelationResult) {
-			defer wg.Done()
-
-			if len(res.Found) == 0 {
-				outputChan <- fmt.Sprintf("%s и %s: нет", res.Relation.MaleTerm, res.Relation.FemaleTerm)
-				return
+		g.Go(func() error {
+			if len(result.Found) == 0 {
+				outputChan <- fmt.Sprintf("%s и %s: нет", result.Relation.MaleTerm, result.Relation.FemaleTerm)
+				return nil
 			}
 
-			for _, p := range res.Found {
+			for _, p := range result.Found {
 				var term string
 				if p.Gender == models.Male {
-					term = res.Relation.MaleTerm
+					term = result.Relation.MaleTerm
 				} else {
-					term = res.Relation.FemaleTerm
+					term = result.Relation.FemaleTerm
 				}
 				outputChan <- fmt.Sprintf("%s: %s", term, p.Name)
 			}
-		}(result)
+			return nil
+		})
 	}
 
 	go func() {
-		wg.Wait()
+		g.Wait()
 		close(outputChan)
 	}()
 

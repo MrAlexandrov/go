@@ -5,15 +5,14 @@ import "sync"
 type Couple struct {
 	First    *Person // Male
 	Second   *Person // Female
-	Children []*Person
-	mutex    sync.RWMutex // Protects Children slice for concurrent access
+	children []*Person
+	mutex    sync.RWMutex // Защищает детей от cuncurrent доступа
 }
 
 func NewCouple(first, second *Person) *Couple {
 	return &Couple{
-		First:    first,
-		Second:   second,
-		Children: make([]*Person, 0),
+		First:  first,
+		Second: second,
 	}
 }
 
@@ -30,14 +29,14 @@ func (c *Couple) GetSpouseOf(p *Person) *Person {
 func (c *Couple) AddChild(child *Person) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	c.Children = append(c.Children, child)
+	c.children = append(c.children, child)
 }
 
 func (c *Couple) GetChildren() []*Person {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 
-	result := make([]*Person, len(c.Children))
-	copy(result, c.Children)
+	result := make([]*Person, len(c.children))
+	copy(result, c.children)
 	return result
 }
