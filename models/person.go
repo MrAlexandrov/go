@@ -32,7 +32,7 @@ func (p *Person) GetParents() (*Person, *Person) {
 	if p.parentCouple == nil {
 		return nil, nil
 	}
-	return p.parentCouple.First, p.parentCouple.Second
+	return p.parentCouple.first, p.parentCouple.second
 }
 
 func (p *Person) GetChildren() []*Person {

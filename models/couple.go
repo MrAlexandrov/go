@@ -3,25 +3,25 @@ package models
 import "sync"
 
 type Couple struct {
-	First    *Person // Male
-	Second   *Person // Female
+	first    *Person // Male
+	second   *Person // Female
 	children []*Person
 	mutex    sync.RWMutex // Защищает детей от cuncurrent доступа
 }
 
 func NewCouple(first, second *Person) *Couple {
 	return &Couple{
-		First:  first,
-		Second: second,
+		first:  first,
+		second: second,
 	}
 }
 
 func (c *Couple) GetSpouseOf(p *Person) *Person {
-	if p == c.First {
-		return c.Second
+	if p == c.first {
+		return c.second
 	}
-	if p == c.Second {
-		return c.First
+	if p == c.second {
+		return c.first
 	}
 	return nil
 }

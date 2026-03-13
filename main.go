@@ -12,12 +12,12 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-type State struct {
-	Current *models.Person
-	From    *models.Person
+type state struct {
+	current *models.Person
+	from    *models.Person
 }
 
-func PerformStep(current *models.Person, from *models.Person, step rune) []*models.Person {
+func performStep(current *models.Person, from *models.Person, step rune) []*models.Person {
 	var result []*models.Person
 
 	add := func(p *models.Person) {
@@ -56,15 +56,15 @@ func PerformStep(current *models.Person, from *models.Person, step rune) []*mode
 	return result
 }
 
-func TraversePath(start *models.Person, path string) []*models.Person {
-	states := []State{{Current: start, From: nil}}
+func traversePath(start *models.Person, path string) []*models.Person {
+	states := []state{{current: start, from: nil}}
 
 	for _, step := range path {
-		stateChan := make(chan State, len(states))
-		resultChan := make(chan []State, len(states))
+		stateChan := make(chan state, len(states))
+		resultChan := make(chan []state, len(states))
 
-		for _, state := range states {
-			stateChan <- state
+		for _, s := range states {
+			stateChan <- s
 		}
 		close(stateChan)
 
@@ -73,15 +73,15 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 		g := new(errgroup.Group)
 		for range numWorkers {
 			g.Go(func() error {
-				var localStates []State
+				var localStates []state
 
-				for state := range stateChan {
-					nextPersons := PerformStep(state.Current, state.From, step)
+				for s := range stateChan {
+					nextPersons := performStep(s.current, s.from, step)
 
 					for _, person := range nextPersons {
-						localStates = append(localStates, State{
-							Current: person,
-							From:    state.Current,
+						localStates = append(localStates, state{
+							current: person,
+							from:    s.current,
 						})
 					}
 				}
@@ -98,7 +98,7 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 			close(resultChan)
 		}()
 
-		var nextStates []State
+		var nextStates []state
 		for localStates := range resultChan {
 			nextStates = append(nextStates, localStates...)
 		}
@@ -111,9 +111,9 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 	var mutex sync.Mutex
 
 	g := new(errgroup.Group)
-	for _, state := range states {
+	for _, s := range states {
 		g.Go(func() error {
-			person := state.Current
+			person := s.current
 
 			mutex.Lock()
 			defer mutex.Unlock()
@@ -131,21 +131,21 @@ func TraversePath(start *models.Person, path string) []*models.Person {
 	return result
 }
 
-type RelationResult struct {
-	Relation parser.Relation
-	Found    []*models.Person
+type relationResult struct {
+	relation parser.Relation
+	found    []*models.Person
 }
 
-func ProcessRelationsConcurrently(person *models.Person, relations []parser.Relation) []RelationResult {
-	results := make([]RelationResult, len(relations))
+func processRelationsConcurrently(person *models.Person, relations []parser.Relation) []relationResult {
+	results := make([]relationResult, len(relations))
 
 	g := new(errgroup.Group)
 	for i, rel := range relations {
 		g.Go(func() error {
-			found := TraversePath(person, rel.Path)
-			results[i] = RelationResult{
-				Relation: rel,
-				Found:    found,
+			found := traversePath(person, rel.Path)
+			results[i] = relationResult{
+				relation: rel,
+				found:    found,
 			}
 			return nil
 		})
@@ -192,24 +192,24 @@ func main() {
 
 	fmt.Printf("\nРодственники для %s:\n", query)
 
-	results := ProcessRelationsConcurrently(person, relations)
+	results := processRelationsConcurrently(person, relations)
 
 	outputChan := make(chan string, tree.GetPeopleNumber())
 
 	var g errgroup.Group
 	for _, result := range results {
 		g.Go(func() error {
-			if len(result.Found) == 0 {
-				outputChan <- fmt.Sprintf("%s и %s: нет", result.Relation.MaleTerm, result.Relation.FemaleTerm)
+			if len(result.found) == 0 {
+				outputChan <- fmt.Sprintf("%s и %s: нет", result.relation.MaleTerm, result.relation.FemaleTerm)
 				return nil
 			}
 
-			for _, p := range result.Found {
+			for _, p := range result.found {
 				var term string
 				if p.Gender == models.Male {
-					term = result.Relation.MaleTerm
+					term = result.relation.MaleTerm
 				} else {
-					term = result.Relation.FemaleTerm
+					term = result.relation.FemaleTerm
 				}
 				outputChan <- fmt.Sprintf("%s: %s", term, p.Name)
 			}

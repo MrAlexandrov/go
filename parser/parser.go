@@ -55,7 +55,7 @@ func ParsePeopleFile(filename string, tree *models.FamilyTree) error {
 	for range numWorkers {
 		g.Go(func() error {
 			for line := range validLineChan {
-				if err := ParsePerson(line, tree); err != nil {
+				if err := parsePerson(line, tree); err != nil {
 					return err
 				}
 			}
@@ -99,7 +99,7 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	g := new(errgroup.Group)
 	for _, line := range marriages {
 		g.Go(func() error {
-			return ParseMarriage(line, tree)
+			return parseMarriage(line, tree)
 		})
 	}
 	if err := g.Wait(); err != nil {
@@ -109,7 +109,7 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	g = new(errgroup.Group)
 	for _, line := range children {
 		g.Go(func() error {
-			return ParseChild(line, tree)
+			return parseChild(line, tree)
 		})
 	}
 	if err := g.Wait(); err != nil {
@@ -119,7 +119,7 @@ func ParseConnectionsFile(filename string, tree *models.FamilyTree) error {
 	return nil
 }
 
-func ParsePerson(line string, tree *models.FamilyTree) error {
+func parsePerson(line string, tree *models.FamilyTree) error {
 	parenIdx := strings.LastIndex(line, " (")
 	if parenIdx == -1 {
 		return nil
@@ -137,7 +137,7 @@ func ParsePerson(line string, tree *models.FamilyTree) error {
 	return nil
 }
 
-func ParseMarriage(line string, tree *models.FamilyTree) error {
+func parseMarriage(line string, tree *models.FamilyTree) error {
 	before, after, ok := strings.Cut(line, "<->")
 	if !ok {
 		return nil
@@ -156,7 +156,7 @@ func ParseMarriage(line string, tree *models.FamilyTree) error {
 	return nil
 }
 
-func ParseChild(line string, tree *models.FamilyTree) error {
+func parseChild(line string, tree *models.FamilyTree) error {
 	before, after, ok := strings.Cut(line, "->")
 	if !ok {
 		return nil
@@ -207,7 +207,7 @@ func ParseRelationsFile(filename string) ([]Relation, error) {
 	g := new(errgroup.Group)
 	for i, line := range lines {
 		g.Go(func() error {
-			rel, err := ParseRelation(line)
+			rel, err := parseRelation(line)
 			if err != nil {
 				return err
 			}
@@ -231,7 +231,7 @@ func ParseRelationsFile(filename string) ([]Relation, error) {
 	return result, nil
 }
 
-func ParseRelation(line string) (Relation, error) {
+func parseRelation(line string) (Relation, error) {
 	spaceIdx := strings.Index(line, " ")
 	if spaceIdx == -1 {
 		return Relation{}, nil
